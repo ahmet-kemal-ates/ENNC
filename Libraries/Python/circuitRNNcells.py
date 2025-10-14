@@ -4,7 +4,7 @@ from keras import activations
 from keras import initializers
 from keras import regularizers
 from keras import constraints
-
+import tensorflow as tf
 
 class VqstState(Layer):
 
@@ -29,8 +29,8 @@ class VqstState(Layer):
     def build(self, input_shape):
         input_dim = input_shape[-1]
 
-        self.mask_x = K.concatenate((K.ones((input_dim-1,)), K.zeros((1,))), axis=0)
-        self.mask_I = K.concatenate((K.zeros((input_dim-1,)), K.ones((1,))), axis=0)
+        self.mask_x = tf.concat((tf.ones((input_dim-1,)), tf.zeros((1,))), axis=0)
+        self.mask_I = tf.concat((tf.zeros((input_dim-1,)), tf.ones((1,))), axis=0)
 
         self.kernel = self.add_weight(shape=(input_dim, self.units),
                                         initializer=self.kernel_initializer,
@@ -55,17 +55,17 @@ class VqstState(Layer):
         s = states[0]
 
         x = inputs*self.mask_x
-        I = K.sum(inputs*self.mask_I)
+        I = tf.reduce_sum(inputs*self.mask_I)
 
-        x = K.dot(inputs, self.kernel)
-        x_s = K.dot(s, self.expanding_kernel)
+        x = tf.linalg.matmul(inputs, self.kernel)
+        x_s = tf.linalg.matmul(s, self.expanding_kernel)
         if self.use_bias:
-            x = K.bias_add(x, self.bias)
-            x_s = K.bias_add(x_s, self.bias_s)
+            x = tf.nn.bias_add(x, self.bias)
+            x_s = tf.nn.bias_add(x_s, self.bias_s)
 
-        r = K.dot(x_s, self.recurrent_kernel)
+        r = tf.linalg.matmul(x_s, self.recurrent_kernel)
         if self.use_bias:
-            r = K.bias_add(r, self.bias_r)
+            r = tf.nn.bias_add(r, self.bias_r)
         r = self.recurrent_activation(r)
 
         h = self.activation(x + r)*self.gain
@@ -114,8 +114,8 @@ class VqstStateGRU(Layer):
     def build(self, input_shape):
         input_dim = input_shape[-1]
 
-        self.mask_x = K.concatenate((K.ones((input_dim-1,)), K.zeros((1,))), axis=0)
-        self.mask_I = K.concatenate((K.zeros((input_dim-1,)), K.ones((1,))), axis=0)
+        self.mask_x = tf.concat((tf.ones((input_dim-1,)), tf.zeros((1,))), axis=0)
+        self.mask_I = tf.concat((tf.zeros((input_dim-1,)), tf.ones((1,))), axis=0)
 
         self.kernel_r = self.add_weight(shape=(input_dim, self.units),
                                         initializer=self.kernel_initializer,
@@ -154,16 +154,16 @@ class VqstStateGRU(Layer):
         s = states[0]
 
         x = inputs*self.mask_x
-        I = K.sum(inputs*self.mask_I)
+        I = tf.reduce_sum(inputs*self.mask_I)
 
-        x_r = K.dot(x, self.kernel_r)
-        x_h = K.dot(x, self.kernel_h)
+        x_r = tf.linalg.matmul(x, self.kernel_r)
+        x_h = tf.linalg.matmul(x, self.kernel_h)
         if self.use_bias:
-            x_r = K.bias_add(x_r, self.bias_r)
-            x_h = K.bias_add(x_h, self.bias_h)
+            x_r = tf.nn.bias_add(x_r, self.bias_r)
+            x_h = tf.nn.bias_add(x_h, self.bias_h)
 
-        r = self.recurrent_activation(x_r + K.dot(s, self.recurrent_kernel_r))
-        h = self.activation(x_h + K.dot(s*r, self.recurrent_kernel_h))*self.gain
+        r = self.recurrent_activation(x_r + tf.linalg.matmul(s, self.recurrent_kernel_r))
+        h = self.activation(x_h + tf.linalg.matmul(s*r, self.recurrent_kernel_h))*self.gain
 
         output = s + h*I
 
@@ -198,9 +198,10 @@ class VdynState(Layer):
         super(VdynState, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        self.w_tau = K.concatenate((K.eye(self.units), K.zeros((self.units, self.units))),
-                                   axis=0)
-        self.w_RI = K.concatenate((K.zeros((self.units, self.units)), K.eye(self.units)),
+        import tensorflow.keras.backend as K
+
+        self.w_tau = tf.concat([tf.eye(self.units), tf.zeros((self.units, self.units))], axis=0)
+        self.w_RI = tf.concat((tf.zeros((self.units, self.units)), tf.eye(self.units)),
                                  axis=0)
 
         if self.use_gain:
@@ -214,9 +215,11 @@ class VdynState(Layer):
 
     def call(self, inputs, states):
         prev_output = states[0]
-        tau = (self.minTau + K.dot(inputs, self.w_tau) * (self.maxTau-self.minTau)) * self.gain
-        alpha = K.exp(-self.Ts / tau)
-        RI = K.dot(inputs, self.w_RI)
+
+        tau = (self.minTau + tf.linalg.matmul(inputs, self.w_tau) * (self.maxTau - self.minTau)) * self.gain
+
+        alpha = tf.exp(-self.Ts / tau)
+        RI = tf.linalg.matmul(inputs, self.w_RI)
         output = prev_output * alpha + RI * (1 - alpha)
         return output, [output]
 
@@ -239,8 +242,8 @@ class VdynStateVanilla(Layer):
         super(VdynStateVanilla, self).__init__(**kwargs)
 
     def build(self, input_shape):
-        self.w_tau = K.concatenate((K.eye(self.units), K.zeros((self.units, self.units))), axis=0)
-        self.w_RI = K.concatenate((K.zeros((self.units, self.units)), K.eye(self.units)), axis=0)
+        self.w_tau = tf.concat((tf.eye(self.units), tf.zeros((self.units, self.units))), axis=0)
+        self.w_RI = tf.concat((tf.zeros((self.units, self.units)), tf.eye(self.units)), axis=0)
 
         self.gain = self.add_weight((self.units,),
                                     initializer='ones',
@@ -250,8 +253,8 @@ class VdynStateVanilla(Layer):
 
     def call(self, inputs, states):
         prev_output = states[0]
-        alpha = K.dot(inputs, self.w_tau) * self.gain
-        RI = K.dot(inputs, self.w_RI)
+        alpha = tf.linalg.matmul(inputs, self.w_tau) * self.gain
+        RI = tf.linalg.matmul(inputs, self.w_RI)
         output = prev_output * alpha + RI * (1 - alpha)
         return output, [output]
 
@@ -288,8 +291,8 @@ class VdynStateGRU(Layer):
     def build(self, input_shape):
         input_dim = input_shape[-1]
 
-        self.mask_x = K.concatenate((K.ones((input_dim-1,)), K.zeros((1,))), axis=0)
-        self.mask_I = K.concatenate((K.zeros((input_dim-1,)), K.ones((1,))), axis=0)
+        self.mask_x = tf.concat((tf.ones((input_dim-1,)), tf.zeros((1,))), axis=0)
+        self.mask_I = tf.concat((tf.zeros((input_dim-1,)), tf.ones((1,))), axis=0)
 
         self.kernel_z = self.add_weight(shape=(input_dim, self.units),
                                     initializer=self.kernel_initializer,
@@ -336,19 +339,19 @@ class VdynStateGRU(Layer):
         s = states[0]
 
         x = inputs*self.mask_x
-        I = K.sum(inputs*self.mask_I)
+        I = tf.reduce_sum(inputs*self.mask_I)
 
-        x_z = K.dot(x, self.kernel_z)
-        x_r = K.dot(x, self.kernel_r)
-        x_h = K.dot(x, self.kernel_h)
+        x_z = tf.linalg.matmul(x, self.kernel_z)
+        x_r = tf.linalg.matmul(x, self.kernel_r)
+        x_h = tf.linalg.matmul(x, self.kernel_h)
         if self.use_bias:
-            x_z = K.bias_add(x_z, self.bias_z)
-            x_r = K.bias_add(x_r, self.bias_r)
-            x_h = K.bias_add(x_h, self.bias_h)
+            x_z = tf.nn.bias_add(x_z, self.bias_z)
+            x_r = tf.nn.bias_add(x_r, self.bias_r)
+            x_h = tf.nn.bias_add(x_h, self.bias_h)
 
-        z = self.recurrent_activation(x_z + K.dot(s, self.recurrent_kernel_z))
-        r = self.recurrent_activation(x_r + K.dot(s, self.recurrent_kernel_r))
-        h = self.activation(x_h + K.dot(s*r, self.recurrent_kernel_h))*I
+        z = self.recurrent_activation(x_z + tf.linalg.matmul(s, self.recurrent_kernel_z))
+        r = self.recurrent_activation(x_r + tf.linalg.matmul(s, self.recurrent_kernel_r))
+        h = self.activation(x_h + tf.linalg.matmul(s*r, self.recurrent_kernel_h))*I
 
         output = s*z + h*(1 - z)
 
