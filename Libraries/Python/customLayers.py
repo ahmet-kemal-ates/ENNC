@@ -2,6 +2,7 @@
 from __future__ import absolute_import
 from __future__ import division
 
+import tensorflow as tf
 import numpy as np
 import math
 import copy
@@ -13,9 +14,9 @@ from keras import activations
 from keras import initializers
 from keras import regularizers
 from keras import constraints
-from keras.engine import InputSpec
-from keras.engine import Layer
-from keras.legacy import interfaces
+from keras.layers import Layer
+from keras.layers import InputSpec
+
 
 import scipy.special
 
@@ -60,7 +61,7 @@ class WNN(Layer):
         the output would have shape `(batch_size, units)`.
     """
 
-    @interfaces.legacy_dense_support
+
     def __init__(self, levels=0,
                  wavelet='morlet',
                  initialize_range=[0.0, 1.0],
@@ -100,14 +101,14 @@ class WNN(Layer):
 
     def call(self, inputs):
         inputWavelet = inputs[:, :, None]
-        inputWavelet = (K.repeat_elements(inputWavelet, self.units, axis=2))
+        inputWavelet = (tf.repeat(inputWavelet, self.units, axis=2))
 
         if self.wavelet == 'morlet':
             out = self.morlet((inputWavelet-self.T)/self.D)
         elif self.wavelet == 'mexican':
             out = self.mexican((inputWavelet-self.T)/self.D)
 
-        return K.prod(out, axis=1)
+        return tf.reduce_prod(out, axis=1)
 
     def tree_builder(self, a, b, L):
         traslation = []
@@ -129,12 +130,12 @@ class WNN(Layer):
 
     @staticmethod
     def morlet(x):
-        y = K.cos(1.75 * x) * K.exp(-0.5 * x ** 2)
+        y = tf.cos(1.75 * x) * tf.exp(-0.5 * x ** 2)
         return y
 
     @staticmethod
     def mexican(x):
-        y = K.exp(-x ** 2) * (1 - x) ** 2
+        y = tf.exp(-x ** 2) * (1 - x) ** 2
         return y
 
     def compute_output_shape(self, input_shape):
@@ -194,7 +195,7 @@ class Wavenet(Layer):
         the output would have shape `(batch_size, units)`.
     """
 
-    @interfaces.legacy_dense_support
+
     def __init__(self, levels=0,
                  initialize_range=[0.0, 1.0],
                  trainable=False,
@@ -229,11 +230,11 @@ class Wavenet(Layer):
 
     def call(self, inputs):
         inputWavelet = inputs[:, :, None]
-        inputWavelet = (K.repeat_elements(inputWavelet, self.units, axis=2))
+        inputWavelet = (tf.repeat(inputWavelet, self.units, axis=2))
 
         out = self.meyer_scaling((inputWavelet - self.T)/self.D)
 
-        return K.prod(out, axis=1)
+        return tf.reduce_prod(out, axis=1)
 
     def tree_builder(self, a, b, L):
         traslation = []
@@ -256,7 +257,7 @@ class Wavenet(Layer):
     @staticmethod
     def meyer_scaling(x):
         x += 1e-16
-        y = (K.sin(2/3*np.pi*x) + 4/3*x*K.cos(4/3*np.pi*x)) / (np.pi*x - 16/9*np.pi*x**3)
+        y = (tf.sin(2/3*np.pi*x) + 4/3*x*tf.cos(4/3*np.pi*x)) / (np.pi*x - 16/9*np.pi*x**3)
         return y
 
     def compute_output_shape(self, input_shape):
@@ -315,7 +316,7 @@ class Wavelet(Layer):
         the output would have shape `(batch_size, units)`.
     """
 
-    @interfaces.legacy_dense_support
+
     def __init__(self, units,
                  wavelet='morlet',
                  translation_initializer = 'ones',
@@ -347,23 +348,23 @@ class Wavelet(Layer):
 
     def call(self, inputs):
         inputWavelet = inputs[:, :, None]
-        inputWavelet = (K.repeat_elements(inputWavelet, (self.units), axis=2) - self.T) / self.D
+        inputWavelet = (tf.repeat(inputWavelet, (self.units), axis=2) - self.T) / self.D
 
         if self.wavelet == 'morlet':
             out = self.morlet(inputWavelet)
         elif self.wavelet == 'mexican':
             out = self.mexican(inputWavelet)
 
-        return K.prod(out, axis=1)
+        return tf.reduce_prod(out, axis=1)
 
     @staticmethod
     def morlet(x):
-        y = K.cos(1.75 * x) * K.exp(-0.5 * x ** 2)
+        y = tf.cos(1.75 * x) * tf.exp(-0.5 * x ** 2)
         return y
 
     @staticmethod
     def mexican(x):
-        y = K.exp(-x ** 2) * (1 - x) ** 2
+        y = tf.exp(-x ** 2) * (1 - x) ** 2
         return y
 
     def initialize_wavelons(self, translation, dilatation):
@@ -425,7 +426,7 @@ class RBF(Layer):
         the output would have shape `(batch_size, units)`.
     """
 
-    @interfaces.legacy_dense_support
+
     def __init__(self, units,
                  center_initializer='glorot_uniform',
                  std_initializer='ones',
@@ -455,8 +456,8 @@ class RBF(Layer):
 
     def call(self, inputs):
         inputRBF = inputs[:, :, None]
-        inputRBF = K.repeat_elements(inputRBF, (self.units), axis=2) - self.U
-        return K.exp(-self.B * K.sum(inputRBF ** 2, axis=1) / self.units)
+        inputRBF = tf.repeat(inputRBF, (self.units), axis=2) - self.U
+        return tf.exp(-self.B * tf.reduce_sum(inputRBF ** 2, axis=1) / self.units)
 
     def set_means(self, mean_values):
         #assert mean_values.shape == (self.input_dim, self.units)
@@ -523,7 +524,7 @@ class FunctionalLink(Layer):
         the output would have shape `(batch_size, units)`.
     """
 
-    @interfaces.legacy_dense_support
+
     def __init__(self, num_cheby=10, num_trig=0, num_bernstein=0, num_bspline=0, k=2,
                  **kwargs):
         if 'input_shape' not in kwargs and 'input_dim' in kwargs:
@@ -535,7 +536,7 @@ class FunctionalLink(Layer):
         self.num_bspline = num_bspline
         self.k = k
         maxBinom = np.maximum(self.num_bernstein, self.num_cheby) + 1
-        self.binom = np.zeros((maxBinom, maxBinom), dtype=K.floatx())
+        self.binom = np.zeros((maxBinom, maxBinom), dtype=tf.keras.backend.floatx())
         for i in range(maxBinom):
             for j in range(maxBinom):
                 self.binom[i,j] = scipy.special.binom(i,j)
@@ -553,7 +554,7 @@ class FunctionalLink(Layer):
         input_dim = input_shape[-1]
 
         self.units *= input_dim
-        self.knots = np.linspace(-0.1, 1.1, self.num_bspline + self.k + 2, dtype=K.floatx())
+        self.knots = np.linspace(-0.1, 1.1, self.num_bspline + self.k + 2, dtype=tf.keras.backend.floatx())
         self.input_spec = InputSpec(min_ndim=2, axes={-1: input_dim})
         self.built = True
 
@@ -563,37 +564,37 @@ class FunctionalLink(Layer):
         if self.num_cheby != 0:
             output = self.cheby(inputs, 1)
             for n in range(2, self.num_cheby + 1):
-                output = K.concatenate((output, self.cheby(inputs, n)), axis=1)
+                output = tf.concat((output, self.cheby(inputs, n)), axis=1)
 
         if self.num_trig != 0:
             if output is None:
-                output = K.sin(1 * inputs)
-                output = K.concatenate((output, K.cos(1 * inputs)), axis=1)
+                output = tf.sin(1 * inputs)
+                output = tf.concat((output, tf.cos(1 * inputs)), axis=1)
                 for n in range(2, self.num_trig + 1):
-                    output = K.concatenate((output, K.sin(n * inputs)), axis=1)
-                    output = K.concatenate((output, K.cos(n * inputs)), axis=1)
+                    output = tf.concat((output, tf.sin(n * inputs)), axis=1)
+                    output = tf.concat((output, tf.cos(n * inputs)), axis=1)
             else:
                 for n in range(1, self.num_trig + 1):
-                    output = K.concatenate((output, K.sin(n * inputs)), axis=1)
-                    output = K.concatenate((output, K.cos(n * inputs)), axis=1)
+                    output = tf.concat((output, tf.sin(n * inputs)), axis=1)
+                    output = tf.concat((output, tf.cos(n * inputs)), axis=1)
 
         if self.num_bernstein != 0:
             if output is None:
                 output = self.bernstein(inputs, 0, self.num_bernstein)
                 for n in range(1, self.num_bernstein + 1):
-                    output = K.concatenate((output, self.bernstein(inputs, n, self.num_bernstein)), axis=1)
+                    output = tf.concat((output, self.bernstein(inputs, n, self.num_bernstein)), axis=1)
             else:
                 for n in range(0, self.num_bernstein + 1):
-                    output = K.concatenate((output, self.bernstein(inputs, n, self.num_bernstein)), axis=1)
+                    output = tf.concat((output, self.bernstein(inputs, n, self.num_bernstein)), axis=1)
 
         if self.num_bspline != 0:
             if output is None:
                 output = self.bspline(inputs, 0, self.k)
                 for n in range(1, self.num_bspline + 1):
-                    output = K.concatenate((output, self.bspline(inputs, n, self.k)), axis=1)
+                    output = tf.concat((output, self.bspline(inputs, n, self.k)), axis=1)
             else:
                 for n in range(0, self.num_bspline + 1):
-                    output = K.concatenate((output, self.bspline(inputs, n, self.k)), axis=1)
+                    output = tf.concat((output, self.bspline(inputs, n, self.k)), axis=1)
 
         return output
 
