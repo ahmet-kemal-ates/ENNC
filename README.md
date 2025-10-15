@@ -14,3 +14,5 @@ pip install -r requirements.txt
 cd "ENNC\Ststem Identification"
 
 python main_Train.py
+
+log files will be generated automatically during every run under the "ENNC/Ststem Identification/Models" directory with timestamps
