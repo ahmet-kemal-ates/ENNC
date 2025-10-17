@@ -4,10 +4,31 @@ from keras.models import Model
 from keras.layers import Input, Dense, TimeDistributed, Lambda, RNN
 from keras.layers import Add, Multiply, Concatenate
 from keras import backend as K
+from tensorflow.keras.callbacks import EarlyStopping 
 
 import sys
-sys.path.append(r"C:\Users\Asus\Desktop\Ahmet\datadriven_ESS\Libraries\Libraries\Python")
+from pathlib import Path
+import warnings 
+warnings.filterwarnings('ignore')
+#sys.path.append(r"C:\Users\Asus\Desktop\Ahmet\datadriven_ESS\Libraries\Libraries\Python")
 
+# current_directory 
+print(20*"======")
+current_dir = Path(__file__)
+print(f"current_dir: {current_dir}")
+root_dir = current_dir.parent.parent.parent 
+print(f"root: {root_dir}")
+print(20*"======")
+libs = root_dir/"Libraries/Python"
+print(20*"======")
+gpus = tf.config.list_physical_devices('GPU')
+print("GPUs:", gpus)
+print(20*"======")
+
+if str(libs) not in sys.path:
+    sys.path.append(str(libs))
+    print("libraries path has been added")
+    print(20*"----")
 from customLayers import FunctionalLink
 from circuitRNNcells import VdynState
 
@@ -190,9 +211,17 @@ class ENNC:
             self.TauDynFnc = Model(self.net.inputs, self.net.get_layer('OutTauDynNet').output)
 
     def fit(self, x_tr, y_tr, nEpoch=2000, batchSize=1, optimizer='Nadam', loss='mse'):
+        early_stop = EarlyStopping(
+            monitor="val_loss",      # what to watch
+            patience=10,             # epochs with no improvement before stopping
+            restore_best_weights=True, # roll back to best epoch
+            min_delta=0.01,           # minimum change to qualify as improvement
+            mode="min",              # "min" for losses, "max" for accuracies
+            verbose=1
+        )
         # FIX: honor provided optimizer/loss
         self.net.compile(optimizer=optimizer, loss=loss)
-        history = self.net.fit(x_tr, y_tr, epochs=nEpoch, batch_size=batchSize, verbose=2)
+        history = self.net.fit(x_tr, y_tr, epochs=nEpoch, batch_size=batchSize, callbacks=[early_stop], verbose=2)
         return history
 
     def GetWeights(self):

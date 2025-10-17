@@ -9,7 +9,8 @@ import scipy.io
 import matplotlib.pyplot as plt
 from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from tkinter.filedialog import askopenfilename
-
+import tensorflow as tf
+from tensorflow.keras.callbacks import EarlyStopping 
 from ENNC import ENNC
 
 # Set seed for repeatability
@@ -24,9 +25,16 @@ os.makedirs(output_dir, exist_ok=True)
 arguments = sys.argv
 
 ### LOAD DATASET ###
-trainFile = askopenfilename(initialdir=os.path.abspath('../../../Dataset/'), title='Load Training Data',
-                            defaultextension='mat', filetypes=(("mat file", "*.mat"), ("All Files", "*.*"))) \
-    if '-tr' not in arguments else arguments[arguments.index('-tr')+1]
+# trainFile = askopenfilename(initialdir=os.path.abspath('../../../Dataset/'), title='Load Training Data',
+#                             defaultextension='mat', filetypes=(("mat file", "*.mat"), ("All Files", "*.*"))) \
+#    if '-tr' not in arguments else arguments[arguments.index('-tr')+1]
+from pathlib import Path
+
+current_dir = Path(__file__)
+xx = "/home/danial/Documents/Codes_new/ENNC/ENNC/system_identification/Models"
+trainFile =  current_dir.parent/'Models/2019_Matlab_train.mat'
+print(trainFile)
+
 dataTr = scipy.io.loadmat(trainFile)
 tr_Time = dataTr['tr_Time']
 tr_Iin = dataTr['tr_Iin']
@@ -37,9 +45,11 @@ tr_Cn = dataTr['Cn'] if 'Cn' in dataTr else np.array([[1]])
 # FIX: extract scalar robustly (avoid NumPy 1.25 deprecation)
 tr_Ts = float(np.asarray(dataTr['Ts']).squeeze().item()) if 'Ts' in dataTr else 1.0
 
-testFile = askopenfilename(initialdir=os.path.abspath('../Dataset/'), title='Load Test Data',
-                           defaultextension='mat', filetypes=(("mat file", "*.mat"), ("All Files", "*.*"))) \
-    if '-ts' not in arguments else arguments[arguments.index('-ts')+1]
+# testFile = askopenfilename(initialdir=os.path.abspath('../Dataset/'), title='Load Test Data',
+#                            defaultextension='mat', filetypes=(("mat file", "*.mat"), ("All Files", "*.*"))) \
+#     if '-ts' not in arguments else arguments[arguments.index('-ts')+1]
+
+testFile = current_dir.parent/'Models/2019_Matlab_test.mat'
 dataTs = scipy.io.loadmat(testFile)
 ts_Time = dataTs['ts_Time']
 ts_Iin = dataTs['ts_Iin']
@@ -95,8 +105,26 @@ ennc_model = ENNC(Cn=tr_Cn, Ts=tr_Ts, cRate_in=True, SoC_in=True, Temp_in=Temp_i
                   num_cheby=0, num_bernstein=20, num_trig=10, num_bspline=0,
                   outputActivation_Qst='sigmoid')
 
+
+log_dir = "logs/graph_demo"
+writer = tf.summary.create_file_writer(log_dir)
+
+# Write the graph to TensorBoard
+tf.summary.trace_on(graph=True, profiler=False)
+
+
+
 ### TRAINING ###
 start_time = time.time()
+early_stop = EarlyStopping(
+                monitor="val_loss",
+                patience=10,
+                restore_best_weights=True,
+                min_delta = 0.1,
+                mode='min',
+                verbose=1
+                )
+
 history = ennc_model.fit(inputTr, outputTr, nEpoch=nEpoch, batchSize=batchSize, optimizer=optimizer, loss=loss_fn)
 trainingTime = time.time() - start_time
 

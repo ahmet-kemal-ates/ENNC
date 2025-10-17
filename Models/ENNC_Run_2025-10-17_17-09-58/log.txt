@@ -1,0 +1,15 @@
+ENNC Model Training Log
+Run Timestamp: 2025-10-17_17-09-58
+Training File: 2019_Matlab_train.mat
+Test File: 2019_Matlab_test.mat
+Training Time: 1974.53 seconds
+Hyperparameters:
+  Epochs: 2000
+  Batch Size: 32
+  Optimizer: Nadam
+  Loss Function: mse
+MSE Train: 0.000853
+MSE Test: 0.001517
+MAE: 0.044266
+RMSE: 0.055115
+R2 Score: 0.954170
