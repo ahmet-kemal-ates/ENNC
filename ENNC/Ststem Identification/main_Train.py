@@ -1,4 +1,3 @@
-
 import os
 import sys
 import json
@@ -11,6 +10,11 @@ from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
 from tkinter.filedialog import askopenfilename
 
 from ENNC import ENNC
+
+# --- Save figures as PDF by default (editable text in Illustrator, etc.) ---
+plt.rcParams['savefig.format'] = 'pdf'
+plt.rcParams['pdf.fonttype'] = 42   # embeds TrueType fonts
+plt.rcParams['ps.fonttype'] = 42
 
 # Set seed for repeatability
 np.random.seed(7)
@@ -130,26 +134,30 @@ sio.savemat(os.path.join(output_dir, "results.mat"), {
     'mae': mae, 'rmse': rmse, 'r2': r2
 })
 
-### PLOTS ###
-plt.figure()
+### PLOTS (saved as PDFs) ###
+# Predicted vs Actual
+fig1 = plt.figure()
 plt.plot(true_test, label="Actual")
 plt.plot(pred_test, label="Predicted", linestyle='--')
 plt.title("Predicted vs Actual (Test Set)")
 plt.legend()
 plt.grid(True)
-plt.savefig(os.path.join(output_dir, f"predicted_vs_actual_{timestamp}.png"))
+fig1.savefig(os.path.join(output_dir, f"predicted_vs_actual_{timestamp}.pdf"), bbox_inches='tight')
+plt.close(fig1)
 
-plt.figure()
+# Training Loss
+fig2 = plt.figure()
 plt.plot(history.history['loss'])
 plt.title("Training Loss")
 plt.xlabel("Epoch")
 plt.ylabel("Loss")
 plt.grid(True)
-plt.savefig(os.path.join(output_dir, f"training_loss_{timestamp}.png"))
+fig2.savefig(os.path.join(output_dir, f"training_loss_{timestamp}.pdf"), bbox_inches='tight')
+plt.close(fig2)
 
 ### SAVE LOG FILE ###
 log_path = os.path.join(output_dir, "log.txt")
-with open(log_path, 'w') as log:
+with open(log_path, 'w', encoding='utf-8') as log:
     log.write(f"ENNC Model Training Log\n")
     log.write(f"Run Timestamp: {timestamp}\n")
     log.write(f"Training File: {os.path.basename(trainFile)}\n")

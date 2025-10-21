@@ -1,0 +1,15 @@
+ENNC Model Training Log
+Run Timestamp: 2025-10-16_17-26-27
+Training File: TrainingSet_NASA_Fri Apr 19 14-22-06 2019_Matlab.mat
+Test File: TrainingSet_NASA_Fri Apr 19 14-27-45 2019_Matlab.mat
+Training Time: 182.82 seconds
+Hyperparameters:
+  Epochs: 500
+  Batch Size: 64
+  Optimizer: Nadam
+  Loss Function: mse
+MSE Train: 0.000882
+MSE Test: 0.001433
+MAE: 0.041818
+RMSE: 0.051919
+R2 Score: 0.959331

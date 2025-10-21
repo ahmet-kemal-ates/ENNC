@@ -1,0 +1,18 @@
+{
+  "headroom_V": 0.05,
+  "minInputVTr": 2.90595,
+  "maxInputVTr": 4.546049999999999,
+  "maxInputITr": 4.8426,
+  "corr_I_dV": 0.24198964248385232,
+  "flipped_current": true,
+  "minTau": 2,
+  "maxTau": 3,
+  "num_tau": 2,
+  "Temp_in": true,
+  "temp_mu": 31.703769262349525,
+  "temp_sigma": 4.069695306029462,
+  "soc_scaled_to01": false,
+  "minTau_used": 3,
+  "maxTau_used": 1395,
+  "num_tau_used": 4
+}

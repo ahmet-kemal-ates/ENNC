@@ -6,7 +6,7 @@ from keras.layers import Add, Multiply, Concatenate
 from keras import backend as K
 
 import sys
-sys.path.append(r"C:\Users\Asus\Desktop\Ahmet\datadriven_ESS\Libraries\Libraries\Python")
+sys.path.append(r"../../Libraries/Python")
 
 from customLayers import FunctionalLink
 from circuitRNNcells import VdynState
