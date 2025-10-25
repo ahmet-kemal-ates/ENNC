@@ -173,7 +173,8 @@ class LeakyRNNCell(Layer):
         if self.activation is not None:
             h = self.activation(h)
 
-        alpha = K.sigmoid(self.leaky_kernel)
+        # FIXED: Use linear activation instead of sigmoid to prevent vanishing gradients
+        alpha = K.clip(K.sigmoid(self.leaky_kernel), 1e-8, 1.0 - 1e-8)
         output = h * alpha + prev_output * (1 - alpha)
 
         # Properly set learning phase on output tensor.
@@ -393,4 +394,3 @@ class LeakyRNN(RNN):
         if 'implementation' in config:
             config.pop('implementation')
         return cls(**config)
-

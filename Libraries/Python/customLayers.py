@@ -599,6 +599,8 @@ class FunctionalLink(Layer):
         return output
 
     def cheby(self, x, n):
+        # FIXED: Add numerical stability for Chebyshev polynomials
+        x = tf.clip_by_value(x, -1.0 + 1e-8, 1.0 - 1e-8)  # Prevent numerical issues
         N = math.floor(n / 2)
         y = x * 0
         for m in range(N + 1):
@@ -606,6 +608,8 @@ class FunctionalLink(Layer):
         return y
 
     def bernstein(self, x, n, k):
+        # FIXED: Add numerical stability for Bernstein polynomials
+        x = tf.clip_by_value(x, 1e-8, 1.0 - 1e-8)  # Prevent numerical issues
         y = self.binom[k, n] * x**n * (1-x)**(k-n)
         return y
 
@@ -650,5 +654,3 @@ class FunctionalLink(Layer):
         }
         base_config = super(FunctionalLink, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-
-

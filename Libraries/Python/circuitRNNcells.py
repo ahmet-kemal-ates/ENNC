@@ -216,10 +216,13 @@ class VdynState(Layer):
     def call(self, inputs, states):
         prev_output = states[0]
 
-        tau = (self.minTau + tf.linalg.matmul(inputs, self.w_tau) * (self.maxTau - self.minTau)) * self.gain
+        # FIXED: Properly extract tau values from inputs
+        tau_inputs = inputs[:, :self.units]  # First half contains tau values
+        tau = (self.minTau + tau_inputs * (self.maxTau - self.minTau)) * self.gain
 
         alpha = tf.exp(-self.Ts / tau)
-        RI = tf.linalg.matmul(inputs, self.w_RI)
+        RI_inputs = inputs[:, self.units:]  # Second half contains RI values
+        RI = RI_inputs
         output = prev_output * alpha + RI * (1 - alpha)
         return output, [output]
 

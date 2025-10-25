@@ -1,28 +1,48 @@
+import os
+import sys
 import numpy as np
 import tensorflow as tf
-from keras.models import Model
-from keras.layers import Input, Dense, TimeDistributed, Lambda, RNN
-from keras.layers import Add, Multiply, Concatenate
-from keras import backend as K
 
-import sys
-sys.path.append(r"../../Libraries/Python")
+# Use tf.keras to match your TF install (fixes "could not be resolved" in IDE)
+from tensorflow.keras import Model
+from tensorflow.keras.layers import Input, Dense, TimeDistributed, RNN, Add, Multiply, Concatenate, Lambda
+from tensorflow.keras import backend as K
+
+# Make local libs importable: ../../Libraries/Python
+HERE = os.path.dirname(os.path.abspath(__file__))
+LIB_PATH = os.path.normpath(os.path.join(HERE, "..", "..", "Libraries", "Python"))
+if LIB_PATH not in sys.path:
+    sys.path.append(LIB_PATH)
 
 from customLayers import FunctionalLink
 from circuitRNNcells import VdynState
 
 
+# --- Small, serializable layer to clamp τ into (minTau, maxTau) ---
+class TauBound(tf.keras.layers.Layer):
+    def __init__(self, min_tau, max_tau, **kwargs):
+        super().__init__(**kwargs)
+        self.min_tau = float(min_tau)
+        self.max_tau = float(max_tau)
+
+    def call(self, x):
+        return self.min_tau + (self.max_tau - self.min_tau) * tf.math.sigmoid(x)
+
+    def get_config(self):
+        cfg = super().get_config()
+        cfg.update({"min_tau": self.min_tau, "max_tau": self.max_tau})
+        return cfg
+
+
 class ENNC:
     def __init__(self, Cn, Ts, cRate_in, SoC_in, Temp_in,
-                 num_neurons_Ist=15, num_hidden_Ist=1,
-                 hiddenActivation_Ist='relu', outputActivation_Ist='sigmoid',
-                 num_tau=2, num_neurons_Dyn=15, num_hidden_Dyn=1, maxTau=10000, minTau=10,
-                 hiddenActivation_Dyn='relu', outputActivation_Dyn='sigmoid',
-                 num_cheby=0, num_bernstein=20, num_trig=10, num_bspline=0,
-                 outputActivation_Qst='sigmoid',
-                 ):
+                 num_neurons_Ist=25, num_hidden_Ist=3,
+                 hiddenActivation_Ist='relu', outputActivation_Ist='linear',
+                 num_tau=3, num_neurons_Dyn=25, num_hidden_Dyn=3, maxTau=5000, minTau=5,
+                 hiddenActivation_Dyn='relu', outputActivation_Dyn='linear',
+                 num_cheby=0, num_bernstein=15, num_trig=8, num_bspline=0,
+                 outputActivation_Qst='linear'):
 
-        # Save parameters
         # General parameters
         self.Cn = Cn
         self.Ts = Ts
@@ -53,134 +73,109 @@ class ENNC:
         self.outputActivation_Qst = outputActivation_Qst
 
         ### BUILD NETWORK ###
-        # Define input layers (3D: [batch, time, feat])
-        Iin = Input(shape=(None, 1), name='Iin')
-        SoC = Input(shape=(None, 1), name='SoC')
+        Iin  = Input(shape=(None, 1), name='Iin')
+        SoC  = Input(shape=(None, 1), name='SoC')
         Temp = Input(shape=(None, 1), name='Temp')
 
         # Build parametric input
         if Temp_in:
             if cRate_in:
-                if SoC_in:
-                    componentInput = Concatenate()([Iin, Temp, SoC])
-                else:
-                    componentInput = Concatenate()([Iin, Temp])
+                componentInput = Concatenate()([Iin, Temp, SoC]) if SoC_in else Concatenate()([Iin, Temp])
             else:
-                if SoC_in:
-                    componentInput = Concatenate()([Temp, SoC])
-                else:
-                    componentInput = Temp
+                componentInput = Concatenate()([Temp, SoC]) if SoC_in else Temp
         else:
             if cRate_in:
-                if SoC_in:
-                    componentInput = Concatenate()([Iin, SoC])
-                else:
-                    componentInput = Iin
+                componentInput = Concatenate()([Iin, SoC]) if SoC_in else Iin
             else:
-                if SoC_in:
-                    componentInput = SoC
-                else:
-                    # constant "1" feature
-                    componentInput = Lambda(lambda x: x**0)(Iin)
+                componentInput = SoC if SoC_in else Lambda(lambda x: x**0)(Iin)
 
-        # Initialize Input of each network
-        Rist = componentInput
-        Rdyn = componentInput
+        # Initialize per-branch inputs
+        Rist   = componentInput
+        Rdyn   = componentInput
         tauDyn = componentInput
+        Vqst   = Concatenate()([SoC, Temp]) if Temp_in else SoC
 
-        if Temp_in:
-            Vqst = Concatenate()([SoC, Temp])
-        else:
-            Vqst = SoC
-
-        # Build Rist Net
+        # --- Rist (instantaneous) ---
         for n in range(num_hidden_Ist):
             Rist = TimeDistributed(
-                Dense(num_neurons_Ist, activation=hiddenActivation_Ist, kernel_initializer='glorot_normal'),
-                name='HidRistNet_' + n.__str__()
+                Dense(num_neurons_Ist, activation=hiddenActivation_Ist, kernel_initializer='he_normal'),
+                name=f'HidRistNet_{n}'
             )(Rist)
-
         Rist = TimeDistributed(
-            Dense(1, activation=outputActivation_Ist, kernel_initializer='glorot_normal'),
+            Dense(1, activation=outputActivation_Ist, kernel_initializer='he_normal'),
             name='OutRistNet'
         )(Rist)
-
         Vist = Multiply(name='OutIstNet')([Rist, Iin])
 
-        # Build dynamic network
-        ## Rdyn Net
+        # --- Dynamic branch (Rdyn * Iin and τ) ---
         Iin_p = Iin
-        for n in range(num_tau - 1):
+        for _ in range(num_tau - 1):
             Iin_p = Concatenate()([Iin_p, Iin])
 
         for n in range(num_hidden_Dyn):
             Rdyn = TimeDistributed(
-                Dense(num_neurons_Dyn, activation=hiddenActivation_Dyn, kernel_initializer='glorot_normal'),
-                name='HidRdynNet_' + n.__str__()
+                Dense(num_neurons_Dyn, activation=hiddenActivation_Dyn, kernel_initializer='he_normal'),
+                name=f'HidRdynNet_{n}'
             )(Rdyn)
-
         Rdyn = TimeDistributed(
-            Dense(num_tau, activation=outputActivation_Dyn, kernel_initializer='glorot_normal'),
+            Dense(num_tau, activation=outputActivation_Dyn, kernel_initializer='he_normal'),
             name='OutRdynNet'
         )(Rdyn)
-
         RdynI = Multiply()([Rdyn, Iin_p])
 
-        # tauDyn Net
+        # τ head
         for n in range(num_hidden_Dyn):
             tauDyn = TimeDistributed(
-                Dense(num_neurons_Dyn, activation=hiddenActivation_Dyn, kernel_initializer='glorot_normal'),
-                name='HidTauDynNet_' + n.__str__()
+                Dense(num_neurons_Dyn, activation=hiddenActivation_Dyn, kernel_initializer='he_normal'),
+                name=f'HidTauDynNet_{n}'
             )(tauDyn)
-
         tauDyn = TimeDistributed(
-            Dense(num_tau, activation='sigmoid', kernel_initializer='glorot_normal'),
+            Dense(num_tau, activation='linear', kernel_initializer='he_normal'),
             name='OutTauDynNet'
         )(tauDyn)
+        # Clamp τ to a safe positive range
+        tauDyn = TauBound(min_tau=minTau, max_tau=maxTau, name='TauBound')(tauDyn)
 
-        # Concatenate tau and Rdyn*Iin as inputs of the recurrent layer
-        Vdyn = Concatenate()([tauDyn, RdynI])
+        # Concatenate τ and Rdyn*Iin for the recurrent cell
+        Vdyn_in = Concatenate()([tauDyn, RdynI])
 
-        # Create the recurrent layer
+        # Recurrent dynamic layer
         cell_dyn = VdynState(num_tau, Ts=Ts, maxTau=maxTau, minTau=minTau)
-        Vdyn = RNN(cell_dyn, return_sequences=True, name='VdynState')(Vdyn)
+        Vdyn = RNN(cell_dyn, return_sequences=True, name='VdynState')(Vdyn_in)
 
-        # Mix all the Vdyn of each RC dipole
-        trainable = True if self.num_tau != 1 else False
-        init = 'glorot_normal' if self.num_tau != 1 else 'ones'  # FIX: 'one' -> 'ones'
+        # Mix all Vdyn branches
+        trainable = self.num_tau != 1
+        init = 'glorot_normal' if trainable else 'ones'  # 'ones' when only 1 τ
         Vdyn = TimeDistributed(
             Dense(1, activation='linear', kernel_initializer=init, use_bias=False),
             trainable=trainable, name='OutDynNet'
         )(Vdyn)
 
-        # Build Vqst network
+        # --- Quasi-static branch ---
         Vqst = TimeDistributed(
             FunctionalLink(num_cheby=num_cheby, num_trig=num_trig, num_bernstein=num_bernstein, num_bspline=num_bspline),
             name='HidQstNet'
         )(Vqst)
-
         Vqst = TimeDistributed(
-            Dense(1, activation=outputActivation_Qst, kernel_initializer='zeros'),  # FIX: 'zero' -> 'zeros'
+            Dense(1, activation=outputActivation_Qst, kernel_initializer='he_normal'),
             name='OutQstNet'
         )(Vqst)
 
-        # Mix the three network outputs
+        # Output
         Vout = Add()([Vist, Vqst, Vdyn])
 
-        # Define the overall network
+        # Final model + handy sub-models
         if Temp_in:
             self.net = Model(inputs=[Iin, SoC, Temp], outputs=Vout)
-            # FIX: expose sub-outputs via Keras sub-models (not tf.function with tensors)
-            self.VistFnc  = Model(self.net.inputs, self.net.get_layer('OutIstNet').output)
-            self.VdynFnc  = Model(self.net.inputs, self.net.get_layer('OutDynNet').output)
-            self.VdynsFnc = Model(self.net.inputs, self.net.get_layer('OutDynNet').input)
-            self.VqstFnc  = Model(self.net.inputs, self.net.get_layer('OutQstNet').output)
-            self.RistFnc  = Model(self.net.inputs, self.net.get_layer('OutRistNet').output)
-            self.RdynFnc  = Model(self.net.inputs, self.net.get_layer('OutRdynNet').output)
-            self.TauDynFnc = Model(self.net.inputs, self.net.get_layer('OutTauDynNet').output)
+            self.VistFnc   = Model(self.net.inputs, self.net.get_layer('OutIstNet').output)
+            self.VdynFnc   = Model(self.net.inputs, self.net.get_layer('OutDynNet').output)
+            self.VdynsFnc  = Model(self.net.inputs, self.net.get_layer('OutDynNet').input)
+            self.VqstFnc   = Model(self.net.inputs, self.net.get_layer('OutQstNet').output)
+            self.RistFnc   = Model(self.net.inputs, self.net.get_layer('OutRistNet').output)
+            self.RdynFnc   = Model(self.net.inputs, self.net.get_layer('OutRdynNet').output)
+            self.TauDynFnc = Model(self.net.inputs, self.net.get_layer('OutTauDynNet').output)  # raw τ head
         else:
             self.net = Model(inputs=[Iin, SoC], outputs=Vout)
-            # FIX: two-input variants
             self.VistFnc   = Model(self.net.inputs, self.net.get_layer('OutIstNet').output)
             self.VdynFnc   = Model(self.net.inputs, self.net.get_layer('OutDynNet').output)
             self.VdynsFnc  = Model(self.net.inputs, self.net.get_layer('OutDynNet').input)
@@ -189,55 +184,54 @@ class ENNC:
             self.RdynFnc   = Model(self.net.inputs, self.net.get_layer('OutRdynNet').output)
             self.TauDynFnc = Model(self.net.inputs, self.net.get_layer('OutTauDynNet').output)
 
+    # Optional helper; main script uses net.compile/fit directly
     def fit(self, x_tr, y_tr, nEpoch=2000, batchSize=1, optimizer='Nadam', loss='mse'):
-        # FIX: honor provided optimizer/loss
-        self.net.compile(optimizer=optimizer, loss=loss)
+        if not hasattr(self, "_compiled") or not self._compiled:
+            opt = optimizer if isinstance(optimizer, tf.keras.optimizers.Optimizer) else tf.keras.optimizers.get(optimizer)
+            self.net.compile(optimizer=opt, loss=loss)
+            self._compiled = True
         history = self.net.fit(x_tr, y_tr, epochs=nEpoch, batch_size=batchSize, verbose=2)
         return history
 
     def GetWeights(self):
-        ## Get Network Weights
         Rist_hidden = []
         for n in range(self.num_hidden_Ist):
-            Rist_hidden.append(self.net.get_layer(name='HidRistNet_' + n.__str__()).get_weights())
-
+            Rist_hidden.append(self.net.get_layer(name=f'HidRistNet_{n}').get_weights())
         Rist_out = self.net.get_layer(name='OutRistNet').get_weights()
 
         Rdyn_hidden = []
         for n in range(self.num_hidden_Dyn):
-            Rdyn_hidden.append(self.net.get_layer(name='HidRdynNet_' + n.__str__()).get_weights())
+            Rdyn_hidden.append(self.net.get_layer(name=f'HidRdynNet_{n}').get_weights())
         Rdyn_out = self.net.get_layer(name='OutRdynNet').get_weights()
 
         tauDyn_hidden = []
         for n in range(self.num_hidden_Dyn):
-            tauDyn_hidden.append(self.net.get_layer(name='HidTauDynNet_' + n.__str__()).get_weights())
+            tauDyn_hidden.append(self.net.get_layer(name=f'HidTauDynNet_{n}').get_weights())
         tauDyn_out = self.net.get_layer(name='OutTauDynNet').get_weights()
         tauDyn_gain = self.net.get_layer(name='VdynState').get_weights()
 
         Vdyn_out = self.net.get_layer(name='OutDynNet').get_weights()
-
         Vqst_out = self.net.get_layer(name='OutQstNet').get_weights()
 
-        # Pad with zeros for the not active inputs
         if self.Temp_in:
-            if self.cRate_in is True and self.SoC_in is False:
+            if self.cRate_in and not self.SoC_in:
                 Rist_hidden[0][0] = np.concatenate((Rist_hidden[0][0], np.zeros((1, Rist_hidden[0][0].shape[1]))), axis=0)
                 Rdyn_hidden[0][0] = np.concatenate((Rdyn_hidden[0][0], np.zeros((1, Rdyn_hidden[0][0].shape[1]))), axis=0)
                 tauDyn_hidden[0][0] = np.concatenate((tauDyn_hidden[0][0], np.zeros((1, tauDyn_hidden[0][0].shape[1]))), axis=0)
-            elif self.cRate_in is False and self.SoC_in is True:
+            elif (not self.cRate_in) and self.SoC_in:
                 Rist_hidden[0][0] = np.concatenate((np.zeros((1, Rist_hidden[0][0].shape[1])), Rist_hidden[0][0]), axis=0)
                 Rdyn_hidden[0][0] = np.concatenate((np.zeros((1, Rdyn_hidden[0][0].shape[1])), Rdyn_hidden[0][0]), axis=0)
                 tauDyn_hidden[0][0] = np.concatenate((np.zeros((1, tauDyn_hidden[0][0].shape[1])), tauDyn_hidden[0][0]), axis=0)
-            elif self.cRate_in is False and self.SoC_in is False:
+            elif (not self.cRate_in) and (not self.SoC_in):
                 Rist_hidden[0][0] = np.concatenate((np.zeros((1, Rist_hidden[0][0].shape[1])), Rist_hidden[0][0], np.zeros((1, Rist_hidden[0][0].shape[1]))), axis=0)
                 Rdyn_hidden[0][0] = np.concatenate((np.zeros((1, Rdyn_hidden[0][0].shape[1])), Rdyn_hidden[0][0], np.zeros((1, Rdyn_hidden[0][0].shape[1]))), axis=0)
                 tauDyn_hidden[0][0] = np.concatenate((np.zeros((1, tauDyn_hidden[0][0].shape[1])), tauDyn_hidden[0][0], np.zeros((1, tauDyn_hidden[0][0].shape[1]))), axis=0)
         else:
-            if self.cRate_in is True and self.SoC_in is False:
+            if self.cRate_in and (not self.SoC_in):
                 Rist_hidden[0][0] = np.concatenate((Rist_hidden[0][0], np.zeros((1, Rist_hidden[0][0].shape[1]))), axis=0)
                 Rdyn_hidden[0][0] = np.concatenate((Rdyn_hidden[0][0], np.zeros((1, Rdyn_hidden[0][0].shape[1]))), axis=0)
                 tauDyn_hidden[0][0] = np.concatenate((tauDyn_hidden[0][0], np.zeros((1, tauDyn_hidden[0][0].shape[1]))), axis=0)
-            elif self.cRate_in is False and self.SoC_in is True:
+            elif (not self.cRate_in) and self.SoC_in:
                 Rist_hidden[0][0] = np.concatenate((np.zeros((1, Rist_hidden[0][0].shape[1])), Rist_hidden[0][0]), axis=0)
                 Rdyn_hidden[0][0] = np.concatenate((np.zeros((1, Rdyn_hidden[0][0].shape[1])), Rdyn_hidden[0][0]), axis=0)
                 tauDyn_hidden[0][0] = np.concatenate((np.zeros((1, tauDyn_hidden[0][0].shape[1])), tauDyn_hidden[0][0]), axis=0)
@@ -247,33 +241,30 @@ class ENNC:
         Rdyn_w = {'hiddenActivation': self.hiddenActivation_Dyn, 'outputActivation': self.outputActivation_Dyn,
                   'W_i2h': Rdyn_hidden, 'W_h2o': Rdyn_out}
         tauDyn_w = {'hiddenActivation': self.hiddenActivation_Dyn, 'outputActivation': 'sigmoid',
-                    'W_i2h': tauDyn_hidden, 'W_h2o': tauDyn_out, 'gain': tauDyn_gain, 'maxTau': float(self.maxTau),
-                    'minTau': float(self.minTau)}
+                    'W_i2h': tauDyn_hidden, 'W_h2o': tauDyn_out, 'gain': tauDyn_gain,
+                    'maxTau': float(self.maxTau), 'minTau': float(self.minTau)}
         Vdyn_w = {'W_mix': Vdyn_out}
         Vqst_w = {'outputActivation': self.outputActivation_Qst,
                   'num_cheby': float(self.num_cheby), 'num_trig': float(self.num_trig), 'num_bernstein': float(self.num_bernstein),
                   'W_h2o': Vqst_out}
 
-        netWeights = {'Cn': self.Cn, 'Ts': float(self.Ts), 'Rist_w': Rist_w, 'Rdyn_w': Rdyn_w, 'tauDyn_w': tauDyn_w, 'Vdyn_w': Vdyn_w, 'Vqst_w': Vqst_w}
-        self.netWeights = netWeights
-
-        return netWeights
+        self.netWeights = {'Cn': self.Cn, 'Ts': float(self.Ts),
+                           'Rist_w': Rist_w, 'Rdyn_w': Rdyn_w, 'tauDyn_w': tauDyn_w,
+                           'Vdyn_w': Vdyn_w, 'Vqst_w': Vqst_w}
+        return self.netWeights
 
     def SetTrainableIst(self, trainable):
         for n in range(self.num_hidden_Ist):
-            self.net.get_layer(name='HidRistNet_' + n.__str__()).trainable = trainable
+            self.net.get_layer(name=f'HidRistNet_{n}').trainable = trainable
         self.net.get_layer(name='OutRistNet').trainable = trainable
 
     def SetTrainableDyn(self, trainable):
-        # FIX: use num_hidden_Dyn for Rdyn/tauDyn stacks
         for n in range(self.num_hidden_Dyn):
-            self.net.get_layer(name='HidRdynNet_' + n.__str__()).trainable = trainable
+            self.net.get_layer(name=f'HidRdynNet_{n}').trainable = trainable
         self.net.get_layer(name='OutRdynNet').trainable = trainable
-
         for n in range(self.num_hidden_Dyn):
-            self.net.get_layer(name='HidTauDynNet_' + n.__str__()).trainable = trainable
+            self.net.get_layer(name=f'HidTauDynNet_{n}').trainable = trainable
         self.net.get_layer(name='OutTauDynNet').trainable = trainable
-
         self.net.get_layer(name='VdynState').trainable = trainable
         self.net.get_layer(name='OutDynNet').trainable = trainable
 
