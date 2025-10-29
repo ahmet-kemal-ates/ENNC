@@ -21,10 +21,17 @@ dataset_generator_RWx.py you can use it to generate new training dataset pair (t
 
 
 git status
+
 git remote -v
+
 git fetch origin
+
 git switch AhmetKemal
+
 git add -u
+
 git status
+
 git commit -m "ENNC & libs updates; add dataset_generator_RWx.py; README edits"
+
 git push
