@@ -1,0 +1,15 @@
+ENNC Model Training Log
+Run Timestamp: 2025-10-24_02-02-46
+Training File: trainnew.mat
+Test File: testnew.mat
+Training Time: 1562.74 seconds
+Hyperparameters:
+  Epochs: 2000
+  Batch Size: 32
+  Optimizer: Adam
+  Loss Function: mse
+MSE Train: 0.033434
+MSE Test: 0.036861
+MAE: 0.189988
+RMSE: 0.214746
+R2 Score: -0.016145

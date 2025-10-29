@@ -1,0 +1,16 @@
+{
+  "preprocessing": {
+    "headroom_V": 0.2,
+    "minInputVTr": 2.8790999999999998,
+    "maxInputVTr": 4.353899999999999,
+    "maxInputITr": 5.521199999999999,
+    "maxInputTTr": 60.0,
+    "soc_overlap_ratio": 1.0,
+    "data_filtered": false,
+    "noise_level": 0.0
+  },
+  "training": {
+    "epochs_run": 2000,
+    "best_loss": 0.0003837101103272289
+  }
+}
