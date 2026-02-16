@@ -1,0 +1,33 @@
+{
+  "preprocessing": {
+    "normalization": "train_only",
+    "headroom_V": 0.2,
+    "minInputVTr": 2.8440001249313354,
+    "maxInputVTr": 4.739999747276306,
+    "maxInputITr": 5.5379997253417965,
+    "maxInputTTr": 60.0,
+    "soc_overlap_ratio_per_test": {
+      "testRW12.mat": 0.999866002312876
+    },
+    "noise_level": 0.0,
+    "temp_in": true
+  },
+  "training": {
+    "epochs_run": 1000,
+    "best_loss": 0.0007125870906747878,
+    "batch_size": 16,
+    "initial_lr": 0.0003,
+    "min_lr": 1e-06
+  },
+  "files": {
+    "train_files": [
+      "trainRW9.mat",
+      "trainRW10.mat",
+      "trainRW11.mat",
+      "trainRW12.mat"
+    ],
+    "test_files": [
+      "testRW12.mat"
+    ]
+  }
+}

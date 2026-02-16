@@ -1,0 +1,33 @@
+ENNC Model Training Log (TRAIN-ONLY NORMALIZATION)
+Run Timestamp: 2026-02-01_00-01-32
+Output Dir: Models\ENNC_TrainOnly_2026-02-01_00-01-32
+
+Training Files:
+  - trainRW9.mat
+  - trainRW10.mat
+  - trainRW11.mat
+  - trainRW12.mat
+
+Test Files:
+  - testRW12.mat
+
+Training Time: 6637.60 seconds
+Hyperparameters:
+  Epochs: 1000
+  Batch Size: 16
+  Optimizer: Adam (clipnorm=1.0)
+  Loss Function: mse
+  Temp_in: True
+
+Normalization (TRAIN-ONLY):
+  Voltage: [2.844000, 4.740000]
+  Current: ±5.538000
+  Temperature: /60
+
+SoC overlap ratio (per test):
+  testRW12.mat: 0.999866
+
+MSE Train: 0.000713
+
+Test metrics (per file):
+  testRW12.mat: MSE=0.001096  MAE=0.057208  RMSE=0.079630  R2=0.800418

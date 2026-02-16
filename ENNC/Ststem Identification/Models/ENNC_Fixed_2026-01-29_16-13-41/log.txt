@@ -1,0 +1,15 @@
+ENNC Model Training Log
+Run Timestamp: 2026-01-29_16-13-41
+Training File: trainRW9.mat
+Test File: testRW9.mat
+Training Time: 3474.02 seconds
+Hyperparameters:
+  Epochs: 2000
+  Batch Size: 16
+  Optimizer: Adam (clipnorm)
+  Loss Function: mse
+MSE Train: 0.000299
+MSE Test: 0.001137
+MAE: 0.039234
+RMSE: 0.058329
+R2 Score: 0.863300
